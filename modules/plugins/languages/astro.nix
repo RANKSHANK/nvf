@@ -90,7 +90,7 @@ in {
       server = mkOption {
         type = enum (attrNames servers);
         default = defaultServer;
-        description = "Astro LSP server to use";
+        description = "Astro LSP server to use (astro is configured via lspconfig)";
       };
 
       package = mkOption {
