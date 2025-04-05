@@ -5,6 +5,7 @@
   ...
 }: let
   inherit (lib.options) mkEnableOption mkOption;
+  inherit (lib.meta) getExe;
   inherit (lib.modules) mkIf mkMerge;
   inherit (lib.types) package;
   inherit (lib.nvim.types) mkGrammarOption;
@@ -36,14 +37,11 @@ in {
     })
 
     (mkIf cfg.lsp.enable {
-      vim.lsp.lspconfig.enable = true;
-      vim.lsp.lspconfig.sources.asm-lsp = ''
-        lspconfig.asm_lsp.setup {
-          capabilities = capabilities,
-          on_attach = default_on_attach,
-          cmd = {"${cfg.lsp.package}/bin/asm-lsp"},
-        }
-      '';
+      vim.lsp.servers.asm_lsp = {
+        cmd = [(getExe pkgs.asm-lsp)];
+        filetypes = ["asm" "vmasm"];
+        root_markers = [".asm-lsp.toml" ".git"];
+      };
     })
   ]);
 }
