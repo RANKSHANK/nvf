@@ -5,35 +5,38 @@
   ...
 }: let
   inherit (builtins) attrNames;
+  inherit (lib.meta) getExe;
   inherit (lib.modules) mkIf mkMerge;
-  inherit (lib.trivial) boolToString;
-  inherit (lib.lists) isList;
   inherit (lib.options) mkEnableOption mkOption;
-  inherit (lib.types) enum either listOf package nullOr str bool;
-  inherit (lib.strings) optionalString;
-  inherit (lib.nvim.lua) expToLua;
-  inherit (lib.nvim.types) mkGrammarOption;
+  inherit (lib.types) enum listOf bool attrsOf anything either nullOr;
+  inherit (lib.generators) mkLuaInline;
+  inherit (lib.nvim.attrsets) mapListToAttrs;
+  inherit (lib.nvim.types) mkGrammarOption luaInline mkPluginSetupOption;
   inherit (lib.nvim.dag) entryAnywhere;
+  inherit (lib.nvim.lua) toLuaObject;
 
   cfg = config.vim.languages.dart;
   ftcfg = cfg.flutter-tools;
 
-  defaultServer = "dart";
+  defaultServer = ["dart"];
   servers = {
-    dart = {
-      package = pkgs.dart;
-      lspConfig = ''
-        lspconfig.dartls.setup{
-          capabilities = capabilities;
-          on_attach=default_on_attach;
-          cmd = ${
-          if isList cfg.lsp.package
-          then expToLua cfg.lsp.package
-          else ''{"${cfg.lsp.package}/bin/dart", "language-server", "--protocol=lsp"}''
+    dart.options = {
+      cmd = [(getExe pkgs.dart) "language-server" "--protocol=lsp"];
+      filetypes = ["dart"];
+      root_markers = ["pubspec.yaml"];
+      init_options = {
+        onlyAnalyzeProjectsWithOpenFiles = true;
+        suggestFromUnimportedLibraries = true;
+        closingLabels = true;
+        outline = true;
+        flutterOutline = true;
+      };
+      settings = {
+        dart = {
+          completeFunctionCalls = true;
+          showTodos = true;
         };
-          ${optionalString (cfg.lsp.opts != null) "init_options = ${cfg.lsp.dartOpts}"}
-        }
-      '';
+      };
     };
   };
 in {
@@ -49,20 +52,8 @@ in {
       enable = mkEnableOption "Dart LSP support";
       server = mkOption {
         description = "The Dart LSP server to use";
-        type = enum (attrNames servers);
+        type = listOf (enum (attrNames servers));
         default = defaultServer;
-      };
-      package = mkOption {
-        type = either package (listOf str);
-        default = servers.${cfg.lsp.server}.package;
-        example = ''[lib.getExe pkgs.jdt-language-server "-data" "~/.cache/jdtls/workspace"]'';
-        description = "Dart LSP server package, or the command to run as a list of strings";
-      };
-
-      opts = mkOption {
-        type = nullOr str;
-        default = null;
-        description = "Options to pass to Dart LSP server";
       };
     };
 
@@ -94,28 +85,29 @@ in {
         '';
       };
 
-      color = {
-        enable = mkEnableOption "highlighting color variables";
+      setupOpts = mkPluginSetupOption "flutter-tools" {
+        lsp = {
+          # putting this here so that deprecation warnings in deprecations.nix can point to this
+          color = mkOption {
+            type = attrsOf anything;
+            default = {};
+            description = "Show derived colors for dart variables";
+          };
 
-        highlightBackground = mkOption {
-          type = bool;
-          default = false;
-          description = "Highlight the background";
-        };
+          capabilities = mkOption {
+            type = nullOr (either (attrsOf anything) luaInline);
+            default = mkLuaInline "capabilities";
+            description = "LSP capabilities";
+          };
 
-        highlightForeground = mkOption {
-          type = bool;
-          default = false;
-          description = "Highlight the foreground";
-        };
+          on_attach = mkOption {
+            type = luaInline;
+            default = mkLuaInline "default_on_attach";
+            description = "Lua function to run on attach";
+          };
 
-        virtualText = {
-          enable = mkEnableOption "Show the highlight using virtual text";
-
-          character = mkOption {
-            type = str;
-            default = "■";
-            description = "Virtual text character to highlight";
+          debugger = {
+            enabled = mkEnableOption "debugger support" // {default = cfg.dap.enable;};
           };
         };
       };
@@ -129,8 +121,12 @@ in {
     })
 
     (mkIf cfg.lsp.enable {
-      vim.lsp.lspconfig.enable = true;
-      vim.lsp.lspconfig.sources.dart-lsp = servers.${cfg.lsp.server}.lspConfig;
+      vim.lsp.servers =
+        mapListToAttrs (name: {
+          inherit name;
+          value = servers.${name}.options;
+        })
+        cfg.lsp.server;
     })
 
     (mkIf ftcfg.enable {
@@ -140,26 +136,7 @@ in {
         else ["flutter-tools-nvim"];
 
       vim.pluginRC.flutter-tools = entryAnywhere ''
-        require('flutter-tools').setup {
-          lsp = {
-            color = { -- show the derived colours for dart variables
-              enabled = ${boolToString ftcfg.color.enable}, -- whether or not to highlight color variables at all, only supported on flutter >= 2.10
-              background = ${boolToString ftcfg.color.highlightBackground}, -- highlight the background
-              foreground = ${boolToString ftcfg.color.highlightForeground}, -- highlight the foreground
-              virtual_text = ${boolToString ftcfg.color.virtualText.enable}, -- show the highlight using virtual text
-              virtual_text_str = ${ftcfg.color.virtualText.character} -- the virtual text character to highlight
-            },
-
-            capabilities = capabilities,
-            on_attach = default_on_attach;
-            flags = lsp_flags,
-          },
-          ${optionalString cfg.dap.enable ''
-          debugger = {
-            enabled = true,
-          },
-        ''}
-        }
+        require('flutter-tools').setup(${toLuaObject ftcfg.setupOpts})
       '';
     })
   ]);

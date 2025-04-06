@@ -118,6 +118,23 @@ in {
 
       # 2025-04-05
       (mkRemovedOptionModule ["vim" "languages" "clang" "lsp" "opts"] lspOptRemovalMsg)
+      (mkRemovedOptionModule ["vim" "languages" "dart" "lsp" "opts"] lspOptRemovalMsg)
+
+      (mkRenamedOptionModule
+        ["vim" "languages" "dart" "flutter-tools" "color" "enable"]
+        ["vim" "languages" "dart" "flutter-tools" "setupOpts" "lsp" "color" "enabled"])
+      (mkRenamedOptionModule
+        ["vim" "languages" "dart" "flutter-tools" "color" "highlightBackground"]
+        ["vim" "languages" "dart" "flutter-tools" "setupOpts" "lsp" "color" "background"])
+      (mkRenamedOptionModule
+        ["vim" "languages" "dart" "flutter-tools" "color" "highlightForeground"]
+        ["vim" "languages" "dart" "flutter-tools" "setupOpts" "lsp" "color" "foreground"])
+      (mkRenamedOptionModule
+        ["vim" "languages" "dart" "flutter-tools" "color" "virtualText" "enable"]
+        ["vim" "languages" "dart" "flutter-tools" "setupOpts" "lsp" "color" "virtual_text"])
+      (mkRenamedOptionModule
+        ["vim" "languages" "dart" "flutter-tools" "color" "virtualText" "character"]
+        ["vim" "languages" "dart" "flutter-tools" "setupOpts" "lsp" "color" "virtual_text_str"])
     ]
 
     # Migrated via batchRenameOptions. Further batch renames must be below this line.
