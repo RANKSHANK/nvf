@@ -6,30 +6,30 @@
 }: let
   inherit (builtins) attrNames;
   inherit (lib.options) mkEnableOption mkOption;
+  inherit (lib.meta) getExe;
   inherit (lib.modules) mkIf mkMerge;
-  inherit (lib.lists) isList;
-  inherit (lib.types) enum either listOf package str;
-  inherit (lib.nvim.types) mkGrammarOption;
-  inherit (lib.nvim.lua) expToLua;
+  inherit (lib.types) enum listOf package;
+  inherit (lib.generators) mkLuaInline;
+  inherit (lib.nvim.types) mkGrammarOption mkPluginSetupOption;
+  inherit (lib.nvim.attrsets) mapListToAttrs;
   inherit (lib.nvim.dag) entryAnywhere;
+  inherit (lib.nvim.lua) toLuaObject;
 
   cfg = config.vim.languages.elixir;
 
-  defaultServer = "elixirls";
+  defaultServer = ["elixirls"];
   servers = {
-    elixirls = {
-      package = pkgs.elixir-ls;
-      lspConfig = ''
-        -- elixirls setup
-        lspconfig.elixirls.setup {
-          capabilities = capabilities,
-          on_attach = default_on_attach,
-          cmd = ${
-          if isList cfg.lsp.package
-          then expToLua cfg.lsp.package
-          else ''{"${cfg.lsp.package}/bin/elixir-ls"}''
-        }
-        }
+    elixirls.options = {
+      cmd = [(getExe pkgs.elixir-ls)];
+      filetypes = ["elixir" "eelixir" "heex" "surface"];
+      root_dir = mkLuaInline ''
+        function(bufnr)
+          local matches = vim.fs.find({ 'mix.exs' }, { upward = true, limit = 2, path = vim.fn.bufname(bufnr) })
+          local child_or_root_path, maybe_umbrella_path = unpack(matches)
+          local root_dir = vim.fs.dirname(maybe_umbrella_path or child_or_root_path)
+
+          return root_dir
+        end
       '';
     };
   };
@@ -57,15 +57,8 @@ in {
 
       server = mkOption {
         description = "Elixir LSP server to use";
-        type = enum (attrNames servers);
+        type = listOf (enum (attrNames servers));
         default = defaultServer;
-      };
-
-      package = mkOption {
-        description = "Elixir LSP server package, or the command to run as a list of strings";
-        example = ''[lib.getExe pkgs.jdt-language-server " - data " " ~/.cache/jdtls/workspace "]'';
-        type = either package (listOf str);
-        default = servers.${cfg.lsp.server}.package;
       };
     };
 
@@ -87,6 +80,13 @@ in {
 
     elixir-tools = {
       enable = mkEnableOption "Elixir tools";
+
+      setupOpts = mkPluginSetupOption "Elixir tools" {
+        # disable imperative installations of various elixir related tools installed by elixir-tools
+        nextls.enable = mkEnableOption "nextls";
+        credo.enable = mkEnableOption "credo";
+        elixirls.enable = mkEnableOption "elixirls";
+      };
     };
   };
 
@@ -97,8 +97,12 @@ in {
     })
 
     (mkIf cfg.lsp.enable {
-      vim.lsp.lspconfig.enable = true;
-      vim.lsp.lspconfig.sources.elixir-lsp = servers.${cfg.lsp.server}.lspConfig;
+      vim.lsp.servers =
+        mapListToAttrs (name: {
+          inherit name;
+          value = servers.${name}.config;
+        })
+        cfg.lsp.server;
     })
 
     (mkIf cfg.format.enable {
@@ -106,7 +110,7 @@ in {
         enable = true;
         setupOpts.formatters_by_ft.elixir = [cfg.format.type];
         setupOpts.formatters.${cfg.format.type} =
-          formats.${cfg.format.type}.config;
+          formats.${cfg.format.type}.options;
       };
     })
 
@@ -118,19 +122,7 @@ in {
 
         -- disable imperative insstallations of various
         -- elixir related tools installed by elixir-tools
-        elixir.setup {
-          nextls = {
-            enable = false -- defaults to false
-          },
-
-          credo = {
-            enable = false -- defaults to true
-          },
-
-          elixirls = {
-            enable = false, -- defaults to true
-          }
-        }
+        elixir.setup(${toLuaObject cfg.elixir-tools.setupOpts})
       '';
     })
   ]);
